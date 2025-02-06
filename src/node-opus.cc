@@ -31,6 +31,7 @@ Object OpusEncoder::Init(Napi::Env env, Object exports) {
 	Function func = DefineClass(env, "OpusEncoder", {
 		InstanceMethod("encode", &OpusEncoder::Encode),
 		InstanceMethod("decode", &OpusEncoder::Decode),
+		InstanceMethod("decodeFloat", &OpusEncoder::DecodeFloat),
 		InstanceMethod("applyEncoderCTL", &OpusEncoder::ApplyEncoderCTL),
 		InstanceMethod("applyDecoderCTL", &OpusEncoder::ApplyDecoderCTL),
 		InstanceMethod("setBitrate", &OpusEncoder::SetBitrate),
@@ -45,6 +46,7 @@ OpusEncoder::OpusEncoder(const CallbackInfo& args): ObjectWrap<OpusEncoder>(args
 	this->encoder = nullptr;
 	this->decoder = nullptr;
 	this->outPcm = nullptr;
+	this->outFloat = nullptr;
 
 	if (args.Length() < 2) {
 		Napi::RangeError::New(args.Env(), "Expected 2 arguments").ThrowAsJavaScriptException();
@@ -60,6 +62,7 @@ OpusEncoder::OpusEncoder(const CallbackInfo& args): ObjectWrap<OpusEncoder>(args
 	this->channels = args[1].ToNumber().Int32Value();
 	this->application = OPUS_APPLICATION_AUDIO;
 	this->outPcm = new opus_int16[channels * MAX_FRAME_SIZE];
+	this->outFloat = new float[channels * MAX_FRAME_SIZE];
 }
 
 OpusEncoder::~OpusEncoder() {
@@ -70,7 +73,9 @@ OpusEncoder::~OpusEncoder() {
 	this->decoder = nullptr;
 
 	if (this->outPcm) delete this->outPcm;
+	if (this->outFloat) delete this->outFloat;
 	this->outPcm = nullptr;
+	this->outFloat = nullptr;
 }
 
 int OpusEncoder::EnsureEncoder() {
@@ -163,6 +168,52 @@ Napi::Value OpusEncoder::Decode(const CallbackInfo& args) {
 	int decodedLength = decodedSamples * 2 * this->channels;
 
 	Buffer<char> actualBuf = Buffer<char>::Copy(env, reinterpret_cast<char*>(this->outPcm), decodedLength);
+
+	if (!actualBuf.IsEmpty()) return actualBuf;
+
+	Napi::Error::New(env, "Could not decode the data").ThrowAsJavaScriptException();
+	return env.Null();
+}
+
+Napi::Value OpusEncoder::DecodeFloat(const CallbackInfo& args) {
+	Napi::Env env = args.Env();
+
+	if (args.Length() < 1) {
+		Napi::RangeError::New(env, "Expected 1 argument").ThrowAsJavaScriptException();
+		return env.Null();
+	}
+
+	if (!args[0].IsBuffer()) {
+		Napi::TypeError::New(env, "Provided input needs to be a buffer").ThrowAsJavaScriptException();
+		return env.Null();
+	}
+
+	Buffer<unsigned char> buf = args[0].As<Buffer<unsigned char>>();
+	unsigned char* compressedData = buf.Data();
+	size_t compressedDataLength = buf.Length();
+
+	if (this->EnsureDecoder() != OPUS_OK) {
+		Napi::Error::New(env, "Could not create decoder. Check the decoder parameters").ThrowAsJavaScriptException();
+		return env.Null();
+	}
+	
+	int decodedSamples = opus_decode_float(
+		this->decoder,
+		compressedData,
+		compressedDataLength,
+		&(this->outFloat[0]),
+		MAX_FRAME_SIZE,
+		/* decode_fec */ 0
+	);
+
+	if (decodedSamples < 0) {
+		Napi::TypeError::New(env, getDecodeError(decodedSamples)).ThrowAsJavaScriptException();
+		return env.Null();
+	}
+
+	int decodedLength = decodedSamples * 4 * this->channels;
+
+	Buffer<char> actualBuf = Buffer<char>::Copy(env, reinterpret_cast<char*>(this->outFloat), decodedLength);
 
 	if (!actualBuf.IsEmpty()) return actualBuf;
 
