@@ -31,6 +31,8 @@ class OpusEncoder : public ObjectWrap<OpusEncoder> {
 		~OpusEncoder();
 
 		Napi::Value Encode(const CallbackInfo& args);
+
+		Napi::Value EncodeFloat(const CallbackInfo& args);
 		
 		Napi::Value Decode(const CallbackInfo& args);
 
