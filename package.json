@@ -7,7 +7,7 @@
 	"author": "iCrawl <icrawltogo@gmail.com>",
 	"license": "MIT",
 	"scripts": {
-		"install": "node-pre-gyp install --fallback-to-build",
+		"install": "node-pre-gyp install build package",
 		"build": "node-pre-gyp install build package",
 		"lint": "prettier --check . && eslint lib --format=pretty",
 		"lint:fix": "prettier --write . && eslint lib --fix --format=pretty",
